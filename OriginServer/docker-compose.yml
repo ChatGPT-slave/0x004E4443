@@ -1,0 +1,76 @@
+version: '3.9'
+
+services:
+  mongodb:
+    image: mongo:8.0.26
+    container_name: cdn_origin_mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongodbadmin
+      MONGO_INITDB_ROOT_PASSWORD: mongodbadmin
+    volumes:
+      - "C:/~Storage/Mongo/CDN/Origin:/data/db"
+    ports:
+      - "127.0.0.1:27017:27017" # map port for outside docker debug
+    networks:
+      - cdn_origin_network
+    command: ["mongod", "--auth", "--wiredTigerCacheSizeGB", "2", "--port", "27017"]
+
+  redis:
+    image: redis:7.4.9-alpine
+    container_name: cdn_origin_redis
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"
+    networks:
+      - cdn_origin_network
+    command: >
+      redis-server
+      --requirepass MyStrongPassword
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+      --save ""
+      --rename-command FLUSHALL ""
+      --rename-command FLUSHDB ""
+      --lazyfree-lazy-eviction yes
+      --loglevel notice
+      --port 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "MyStrongPassword", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: cdn_origin_minio
+    restart: always
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"      # Web Console port
+    networks:
+      - cdn_origin_network
+    environment:
+      # Enable authentication
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_CACHE_DRIVES: "/opt/cdn-origin-minio-cache"
+      MINIO_CACHE_QUOTA: "80"
+      MINIO_CACHE_AFTER: "2"
+      MINIO_CACHE_EXPIRY: "1" # expire after 1 day
+      # Enable compress
+      MINIO_COMPRESSION_ENABLE: "on"
+      MINIO_COMPRESSION_EXTENSIONS: ".txt,.html,.css,.js,.json,.xml,.svg,.log"
+      MINIO_COMPRESSION_MIME_TYPES: "text/*,application/json,application/javascript,image/svg+xml"
+    volumes:
+      - "C:/~Storage/MinIO/CDN/Origin:/data"
+      - "cdn_origin_minio_cache:/opt/cdn-origin-minio-cache"
+    command: server /data --address ":9000" --console-address ":9001"
+
+volumes:
+  cdn_origin_minio_cache:
+
+networks:
+  cdn_origin_network:
+    driver: bridge
